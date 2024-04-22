@@ -58,15 +58,18 @@ def InitializeMissingValues(data, feat_num, samples_to_impute, seed):
 
     data[samples_to_impute, feat_num] = rng.uniform(minimum, maximum, len(samples_to_impute))
     
-def ImputeDataMice(orig_data, seed):
+def ImputeDataMice(orig_data, threshold: float=1e-3, n_iters: int=10, seed: int=1337):
     """
-    Input (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
+    Input 
+    orig_data (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
+    threshold (float): The threshold for considering whether a value is converged. Default is 1e-3.
+    n_iters (int): The maximum number of iterations to run mice for before stopping. Default is 10.
     seed (int): The seed for the random number generator.
 
     Output:
     New data with imputed values.
     """
-    n_row,n_col = orig_data.shape
+    n_col = orig_data.shape[1]
     mask = np.isnan(orig_data)
     samples_to_impute = [np.where(mask[:, i]==True)[0] for i in range(n_col)]
 
@@ -76,12 +79,32 @@ def ImputeDataMice(orig_data, seed):
         if len(samples_to_impute[col]) != 0:
             InitializeMissingValues(data, col, samples_to_impute[col], seed)
     
-    n_iters = 2
-    for i in range(n_iters):
-        print(f'Iteration: {i}')
-        for i, col in enumerate(tqdm(range(n_col))):
+    cols_to_impute = np.array([col for col in range(n_col) if len(samples_to_impute[col])!= 0])
+
+    # Prep variables for the while loop.
+    previous_imputed_values = np.array([val for col in cols_to_impute for val in data[samples_to_impute[col], col].squeeze()])
+    new_imputed_values = previous_imputed_values.copy()
+    convereged = False
+    iter = 0
+
+    while iter < n_iters and not convereged:
+        print(f'Iteration: {iter}')
+
+        previous_imputed_values = new_imputed_values
+
+        for col in tqdm(cols_to_impute):
             if len(samples_to_impute[col]) != 0:
                 ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col])
-        print()
 
+        # The new imputed values
+        new_imputed_values = np.array([val for col in cols_to_impute for val in data[samples_to_impute[col], col].squeeze()])
+
+        # Check if we've converged
+        delta = np.abs(previous_imputed_values - new_imputed_values)
+        print(f'Sum of deltas: {delta.sum()}. Max delta: {delta.max()}')
+        convereged = np.sum(delta > threshold) == 0
+        iter += 1
+
+    if convereged: print("Converged and Finished!")
+    else: print("Finished!")
     return data

@@ -31,5 +31,3 @@ def Implement_Random_Masking(data, masking_portion, num_cols, seed):
 
   return masked_data
 
-def RetrieveColumns(data):
-  
