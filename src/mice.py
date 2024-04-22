@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm
 from sklearn.linear_model import LinearRegression
 
 def TrainRegressorForSingleFeature(data, feat_num, samples_to_impute):
@@ -31,8 +32,9 @@ def ImputeMissingValuesSingleFeature(data, feat_num, samples_to_impute):
     """
     clf = TrainRegressorForSingleFeature(data, feat_num, samples_to_impute)
 
-    feat_impute_samps = data[samples_to_impute, :]
+    feat_impute_samps = data[samples_to_impute]
     feat_impute_samps = np.delete(feat_impute_samps,feat_num,axis=1)
+    
     imputed_feats = clf.predict(feat_impute_samps)
 
     data[samples_to_impute, feat_num] = imputed_feats
@@ -51,12 +53,12 @@ def InitializeMissingValues(data, feat_num, samples_to_impute, seed):
     Output:
     None
     """
-    minimum, maximum = np.min(data[:,feat_num]), np.max(data[:,feat_num])
+    minimum, maximum = np.nanmin(data[:,feat_num]), np.nanmax(data[:,feat_num])
     rng = np.random.default_rng(seed)
 
     data[samples_to_impute, feat_num] = rng.uniform(minimum, maximum, len(samples_to_impute))
     
-def ImputeData(orig_data, seed):
+def ImputeDataMice(orig_data, seed):
     """
     Input (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
     seed (int): The seed for the random number generator.
@@ -66,20 +68,20 @@ def ImputeData(orig_data, seed):
     """
     n_row,n_col = orig_data.shape
     mask = np.isnan(orig_data)
-    samples_to_impute = [np.where(mask[:, i]==True) for i in range(n_col)]
+    samples_to_impute = [np.where(mask[:, i]==True)[0] for i in range(n_col)]
 
     data = orig_data.copy()
     # Initialize missing values with sort of random values.
     for col in range(n_col):
-        if len(samples_to_impute[col]) == 0:
-            continue
-        InitializeMissingValues(data, col, samples_to_impute[col], seed)
+        if len(samples_to_impute[col]) != 0:
+            InitializeMissingValues(data, col, samples_to_impute[col], seed)
     
-    n_iters = 10
-    for _ in range(n_iters):
-        for col in range(n_col):
-            if len(samples_to_impute[col]) == 0:
-                continue
-            ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col])
+    n_iters = 2
+    for i in range(n_iters):
+        print(f'Iteration: {i}')
+        for i, col in enumerate(tqdm(range(n_col))):
+            if len(samples_to_impute[col]) != 0:
+                ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col])
+        print()
 
     return data
