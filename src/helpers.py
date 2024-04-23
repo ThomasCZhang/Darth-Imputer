@@ -53,25 +53,27 @@ def HighestVarianceFeatures(data, feature_proportion):
 
   return data[:, indexes]
 
-def HighestVarianceDecomposition(data, feature_proportion):
+def HighestVarianceDecomposition(data, feature_proportion, method: str='pca'):
   '''
   This function takes data and the proportion of features to keep and returns a new matrix with the proportion of
   pca features with highest variance.
   Input:
   data (np.ndarray)
   feature_proportion (float)
+  method (str): "pca" or "svd"
 
   Returns:
   the data with reduced number of features
   '''
-  # data = data/np.max(data, axis =0, keepdims=True)
-  # data = data-np.mean(data, axis = 0, keepdims=True)
-
   n_features = round(feature_proportion*data.shape[1])
 
-  if n_features <= min(data.shape):
+  if n_features >= min(data.shape):
+    raise Exception('Number of decomposed features cannot exceed min(nrows, ncols) '+
+                    'where nrows and ncols are the number rows and columns of data')
+  
+  if method.lower() == 'pca':
     decomposer = PCA(n_components=n_features)
-  else:
+  elif method.lower() == 'svd':
     decomposer = TruncatedSVD(n_components=n_features)
 
   decomposer.fit(data)

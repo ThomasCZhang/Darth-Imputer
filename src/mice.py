@@ -58,7 +58,7 @@ def InitializeMissingValues(data, feat_num, samples_to_impute, seed):
 
     data[samples_to_impute, feat_num] = rng.uniform(minimum, maximum, len(samples_to_impute))
     
-def ImputeDataMice(orig_data, threshold: float=1e-3, n_iters: int=10, seed: int=1337):
+def ImputeDataMice(orig_data, threshold: float=5e-3, n_iters: int=10, seed: int=1337):
     """
     Input 
     orig_data (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
