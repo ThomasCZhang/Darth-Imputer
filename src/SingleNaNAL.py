@@ -1,14 +1,15 @@
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 
-class SingleNaNAL():
+import basemodel
+
+class SingleNaNAL(basemodel.Dataset):
     def __init__(self,
-                features:np.ndarray=None, # N x d. N = number of samples. d = number of dimensions.
-                labels:np.ndarray=None, # N x c. N = number of samples. c = number of classes.
+                x:np.ndarray=None, # N x d. N = number of samples. d = number of dimensions.
+                y:np.ndarray=None, # N x c. N = number of samples. c = number of classes.
+                seed:int=174, # The seed for generating the labeled and unlabeled sets
+                test_portion:float=0.3, # Initial proportion of data to use as labeled set.
                 ls_inds:np.ndarray=None, # Labeled set indicies
-                ls_split:float=0.3, # Initial proportion of data to use as labeled set.
                 batch_size:int=1, # batch size.
-                seed:int=0, # The seed for generating the labeled and unlabeled sets
                 classifier:any=None, # Classifier used.
                 ) -> None:
         """
@@ -16,34 +17,21 @@ class SingleNaNAL():
         Input:
         features (np.ndarray): N x d. N = number of samples. d = number of dimensions.
         labels (np.ndarray): N x c. N = number of samples. c = number of classes.
-        ls_inds (np.ndarray): Labeled set indicies. Default is None.
-        ls_split (float): Initial proportion of data to use as labeled set. Default is 0.3.
         seed (int): The seed for generating the labeled and unlabeled sets. Default is 0.
+        ls_split (float): Initial proportion of data to use as labeled set. Default is 0.3.
+        ls_inds (np.ndarray): Labeled set indicies. Default is None.
+        batch_size (int): Number of missing features to impute each iteration.
         classifier (sklearn classifier): Classifier used.
         """
-        self.rng=np.random.default_rng(seed)
-        self.batch_size=batch_size
+        super().__init__(x, y, seed)
 
-        self.features=features
-        self.labels=labels
-
-        n_samples,n_dims=self.features.shape
-        self.ls_split = len(ls_inds)/n_samples if ls_inds is not None else ls_split
-        self.ls_inds = ls_inds if ls_inds is not None else self.SplitData()
-
-        mask = np.ones(n_samples, dtype=bool)
-        mask[self.ls_inds] = False
-        self.us_inds = np.nonzero(mask)[0]
-        
+        self.test_portion = len(ls_inds)/self.len() if ls_inds is not None else test_portion
+        self.train_idx, self.test_idx = self.split_data(self.test_portion)        
         self.clf=classifier
-    
-    def SplitData(self):
-        """
-        Generate the initial indicies to assign to the labeled set.
-        """
-        n_samples,n_dims=self.features.shape
-        ls_inds = np.arange(n_samples)
-        return self.rng.choice(ls_inds, round(self.ls_split*n_samples), replace=False)
+        self.set_batchsize(batch_size)
+
+    def set_batchsize(self, batch_size):
+        self.batch_size = batch_size
 
     def LogGainOneValue(self, i:int, j:int, value:float):
         """
@@ -56,33 +44,35 @@ class SingleNaNAL():
         Output:
         The log gain from replacing the missing feature with value.
         """
-        ls_mod = self.features[self.ls_inds].copy() # labeled set copy
+        ls_mod = self.x[self.train_idx].copy() # labeled set copy
         ls_mod[i,j] = value # labeled set copy with feature[i,j] set to value
-        us = self.features[self.us_inds]
-        us_labels = self.labels[self.us_inds]
+        us = self.x[self.test_idx]
+        us_labels = self.y[self.test_idx]
 
-        self.clf.fit(ls_mod, self.labels[self.ls_inds])
+        self.clf.fit(ls_mod, self.y[self.train_idx])
         probs = self.clf.predict_proba(us)
         log_gain = np.sum(-np.log(probs[:,us_labels]))
         return log_gain
     
-    def ChooseNextFeatureToAdd(self):
+    def ChooseNextFeatureToAdd(self, batch_size:int=None):
         """
         Chooses the next missing value to replace
+        Input:
+        batch_size(int): The number of features to impute at once. 
 
         Output:
         (list[tuple[int, int, float]]): List of tuples. Each tuple is of the form (i, j, val). i and j are the row 
         and column of the missing value. Float is the best value to replace the missing value with.
         """
-        ls = self.features[self.ls_inds]
+        if batch_size is not None: self.set_batchsize(batch_size)
+        ls = self.x[self.train_idx]
         querries = np.nonzero(np.isnan(ls)) # The position of the missing values. In the format of (row_inds, col_inds)
         querries = np.array([tup for tup in zip(*querries)])
-        possible_vals_all_features = [np.unique(ls[:,i]) for i in range(ls.shape[1])] # Get the possible values for each feature
-        
+        possible_vals_all_features = [np.unique(ls[~np.isnan(ls[:,i]),i]) for i in range(ls.shape[1])] # Get the possible values for each feature
+
         scores = []
-        for positions in querries:
+        for (i,j) in querries: # i'th sample, j'th feature
             sample_scores = []
-            i,j = positions # i'th sample, j'th feature
             possible_vals = possible_vals_all_features[j]
             for val in possible_vals:
                 lg = self.LogGainOneValue(i,j,val)
@@ -95,6 +85,7 @@ class SingleNaNAL():
         next_values = [tup[0] for tup in processed_scores[-self.batch_size:]]
 
         res = tuple((*pos, val) for pos, val in zip(next_positions, next_values))
+        breakpoint()
         return res
         
     def ConvertScoresToValScore(self, querries, scores, possible_vals_all_features):
@@ -115,14 +106,15 @@ class SingleNaNAL():
         value.
         """
         new_scores = []
-        for idx, positions in enumerate(querries):
-            i,j = positions # i'th sample, j'th feature
+        for idx, (i,j) in enumerate(querries):
             possible_vals = possible_vals_all_features[j] # All the possible values that the j'th feature can take on.
             best_val_idx = np.argmax(scores[idx]) # scores[idx] is the scores for the idx'th querry
             new_scores.append((possible_vals[best_val_idx], scores[idx][best_val_idx])) 
         return new_scores
 
 if __name__ == '__main__':
+    from sklearn.ensemble import RandomForestClassifier
+
     # Load Data
     # Synthetic Data
     seed = 2024
@@ -144,5 +136,6 @@ if __name__ == '__main__':
     
     # Test making SingleFeatureAL.
     model = SingleNaNAL(data, labels, classifier=RandomForestClassifier())
-    model.batch_size = 3
-    print(model.ChooseNextFeatureToAdd())
+    res = model.ChooseNextFeatureToAdd(3)
+
+    print(res)
