@@ -5,23 +5,32 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 
-class SampleBasedImputation():
-
-    def __init__(self, baseline_model, utility_func):
-        self.model = baseline_model
-        self.utility_func = utility_func
-
-        return
-
-    def select(self, features, labels, missing_data, test_labels):
-
-        utilities = []
-        for d in missing_data:
-            utilities.append(self.utility_func(d))
-
-        return np.argmax(utilities)
+# class SampleBasedImputation():
+#
+#
+#
+#     def __init__(self, baseline_model, utility_func):
+#         self.model = baseline_model
+#         self.utility_func = utility_func
+#
+#         return
+#
+#     def select(self, features, labels, missing_data, test_labels):
+#
+#         utilities = []
+#         for d in missing_data:
+#             utilities.append(self.utility_func(d))
+#
+#         return np.argmax(utilities)
 
 class RandomSelection():
+
+    """
+    Query selection method.
+
+    Just selects a random query.
+
+    """
 
     def __init__(self):
         return
@@ -32,6 +41,35 @@ class RandomSelection():
 
 
 class ImputationSimulation():
+
+    """
+    class to run the sample imputation simulation.
+
+    Needs a query selection class (see RandomSelection for an example)
+
+    requires initial features and labels (clean)
+
+    split is another method (should make RandomSplit default) that
+    ensures the initial set has at least one of each label. It also
+    can start with an arbitrary percent of "clean" data.
+
+    model is an sklearn class. For example, sklearn.linear_model.LogisticRegression
+    or RandomForest etc. don't call the model when initializing ImputationSimulation.
+
+    methods is a list of query selection methods. Each method needs a select
+    attribute that takes in the missing data, their corresponding labels, and
+    the clean data (features and labels). The initialization for the
+    methods should be done prior to initializing ImputationSimulation. See
+    __main__ for an example using RandomSelection. Also, the select method
+    should return an integer, representing the index in the missing data to choose.
+
+    TODO: Implement actual active learning algorithms. As long as it is a
+    class with a select method, it should work.
+
+    TODO: Make run_simulation work for batch selection as well. But this might
+    be less of a priority (I should have code for the homework to do this).
+
+    """
 
     def __init__(self, features, labels, split, percent_missing, model,
     methods, evaluation_mode = "all", fold = None):
@@ -102,6 +140,17 @@ class ImputationSimulation():
 
     def randomly_na(self, data, percent_missing):
 
+        """
+        For each cell in the data, choose if
+        it should be nan with some
+        probability given by percent_missing.
+
+        Require that percent_missing is in the domain [0, 1].
+        if percent_missing is 0.2, for example, then there's a
+        20% chance a given cell will be turned to np.nan
+
+        """
+
         if percent_missing > 1:
             percent_missing = percent_missing / 100
 
@@ -109,10 +158,21 @@ class ImputationSimulation():
         mask = mask < percent_missing
         data = (np.where(mask, np.nan, data))
 
-
         return data
 
     def evaluate(self, features_imputed, labels_imputed, model, features_norm, means, stdvs):
+
+        """
+
+        "all" method uses the current model to
+        get the accuracy for the entire dataset
+
+        "cross validation" does the cross val
+        on only the current clean data (doesn't need
+        to "cheat" by knowing the features of the missing
+        data pool)
+
+        """
 
         if self.evaluation_mode == "all":
             accuracy = self.accuracy_on_all_samples(self.features,
@@ -137,38 +197,61 @@ class ImputationSimulation():
 
     def run_simulation(self):
 
+        """
+        Ranges through each query selection method
+        and returns the means and stdvs of each
+
+        all simulations should start with the same data
+        and use the same evaluation metric
+
+        """
+
         # Make initial set with no missing data
         n = len(self.features)
         initial_set_indexes, missing_data_indexes = self.split(self.features, self.labels)
 
+        # Initial_set_indexes : has all the indexes for the set with no missing data
+        # missing_data_indexes : initial indexes for the data with missing values.
+                                #also the indexes for the corresponding labels
+
+        # split the data into the initial set and missing data set
         features_imputed = self.features[initial_set_indexes]
         labels_imputed = self.labels[initial_set_indexes]
 
+        # create the missing data set. Should start the same for all simulations
         missing_features = self.randomly_na(self.features, self.percent_missing)
 
         missing_features = self.features[missing_data_indexes]
         test_labels = self.labels[missing_data_indexes]
 
+        # mean and standard deviation of accuracy for each selection method
+        # in self.methods. note that stdvs will only be used when cross validation
+        # evaluation method is used.
         all_means = []
         all_stdvs = []
 
         # Run simulation with the same initial set for many
         # possible imputation query selection methods
-        for selection_method in self.methods:
+        for selection_method in self.methods: # each selection_method is an object
 
-            model = self.model().fit(features_imputed, labels_imputed.ravel())
+            # indexes corresponding to data currently with missing values
+            # maps each index in missing_features to the full dataset (self.features)
             indexes = missing_data_indexes.copy()
 
             means = []
             stdvs = []
 
-            while len(labels_imputed) < n: # Stop at n - 1, since there will be no disagreement on the last sample
+            while len(labels_imputed) < n: # Stop at n, since there will be no disagreement on the last sample
 
+                # mean center data everytime we fir a model
                 features_norm = self.scaler.fit(features_imputed).transform(features_imputed)
+                # Train model on current set of imputed (clean) data
                 model = self.model().fit(features_norm, labels_imputed.ravel())
 
+                # Get accuracy metrics for current clean data
                 means, stdvs = self.evaluate(features_imputed, labels_imputed, model, features_norm, means, stdvs)
 
+                # Call the oracle to select the next features to impute
                 x = selection_method.select(features_imputed, labels_imputed,
                  missing_features, test_labels)
 
@@ -183,7 +266,7 @@ class ImputationSimulation():
                                                                                    indexes)
 
 
-            
+            # Add current run accracies to set of all simulations
             all_means.append(means)
             all_stdvs.append(stdvs)
 
@@ -192,7 +275,7 @@ class ImputationSimulation():
     def cross_validation(self, features, labels, model):
 
         """
-        Split the dataset into train and test, compute the 5 fold cross validation.
+        Split the dataset into train and test, compute the self.fold times cross validation.
 
         """
 
@@ -216,6 +299,11 @@ class ImputationSimulation():
 
 
 class RandomSplit():
+
+    """
+    class that does stuff
+    """
+
     def __init__(self, split_percent):
         self.split = split_percent
 
