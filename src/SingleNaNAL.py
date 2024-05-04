@@ -1,14 +1,15 @@
 import numpy as np
-
 import basemodel
+
+from tqdm import tqdm
 
 class SingleNaNAL(basemodel.Dataset):
     def __init__(self,
                 x:np.ndarray=None, # N x d. N = number of samples. d = number of dimensions.
                 y:np.ndarray=None, # N x c. N = number of samples. c = number of classes.
                 seed:int=174, # The seed for generating the labeled and unlabeled sets
-                test_portion:float=0.3, # Initial proportion of data to use as labeled set.
-                ls_inds:np.ndarray=None, # Labeled set indicies
+                train_test_idxs:tuple[np.ndarray, np.ndarray]=None, # Labeled set and unlabeled set indicies
+                test_proportion:float=0.7, # Initial proportion of data to use as labeled set.                
                 batch_size:int=1, # batch size.
                 classifier:any=None, # Classifier used.
                 ) -> None:
@@ -18,20 +19,53 @@ class SingleNaNAL(basemodel.Dataset):
         features (np.ndarray): N x d. N = number of samples. d = number of dimensions.
         labels (np.ndarray): N x c. N = number of samples. c = number of classes.
         seed (int): The seed for generating the labeled and unlabeled sets. Default is 0.
-        ls_split (float): Initial proportion of data to use as labeled set. Default is 0.3.
-        ls_inds (np.ndarray): Labeled set indicies. Default is None.
+        ls_inds (tuple[np.ndarray, np.ndarray]): The row indicies corresponding to the training and testing data. Default is None.
+            The first array is the indicies of the training (labeled) set.
+            The second array is the indicies of the test (unlabeled) set.
+        test_proportion (float): Initial proportion of data to use as testing (unlabeled) set. Default is 0.7.
         batch_size (int): Number of missing features to impute each iteration.
         classifier (sklearn classifier): Classifier used.
         """
         super().__init__(x, y, seed)
 
-        self.test_portion = len(ls_inds)/self.len() if ls_inds is not None else test_portion
-        self.train_idx, self.test_idx = self.split_data(self.test_portion)        
+        self.x_cp = self.x.copy() # The copy of the data that will be modified.
+        self.y_cp = self.y.copy() # The copy of the data labels that will be modified.
+
+        if train_test_idxs is None:
+            self.test_proportion = test_proportion
+            self.train_idx, self.test_idx = self.split_data(self.test_proportion)
+        else:
+            assert len(train_test_idxs)==2, \
+                "train_test_idxs must be a tuple of two np.ndarrays. The first array is the indicies of the training" \
+                + "(labeled) set. The second array is the indicies of the test (unlabeled) set."
+            self.test_proportion = len(train_test_idxs[1])/self.len() 
+            self.train_idx, self.test_idx = train_test_idxs
+
         self.clf=classifier
         self.set_batchsize(batch_size)
 
     def set_batchsize(self, batch_size):
         self.batch_size = batch_size
+
+    def getTrainData(self):
+        return self.x_cp[self.train_idx], self.y_cp[self.train_idx]
+    
+    def getTestData(self):
+        return self.x_cp[self.test_idx], self.y_cp[self.test_idx]
+
+    def UpdateTrainSet(self, i, j, val):
+        """
+        Updates the value of the labeled set.
+        """
+        train_set = self.x_cp[self.train_idx]
+        try:
+            iter(val)
+        except:
+            train_set[i,j] = val
+        else:
+            for r, c, v in zip(i, j, val):
+                train_set[r,c] = v
+        self.x_cp[self.train_idx] = train_set
 
     def LogGainOneValue(self, i:int, j:int, value:float):
         """
@@ -44,17 +78,19 @@ class SingleNaNAL(basemodel.Dataset):
         Output:
         The log gain from replacing the missing feature with value.
         """
-        ls_mod = self.x[self.train_idx].copy() # labeled set copy
-        ls_mod[i,j] = value # labeled set copy with feature[i,j] set to value
-        us = self.x[self.test_idx]
-        us_labels = self.y[self.test_idx]
+        train_set_mod = self.x_cp[self.train_idx].copy() # labeled set copy
+        train_set_mod[i,j] = value # labeled set copy with feature[i,j] set to value
+        test_set = self.x_cp[self.test_idx]
+        test_set_labels = self.y_cp[self.test_idx]
 
-        self.clf.fit(ls_mod, self.y[self.train_idx])
-        probs = self.clf.predict_proba(us)
-        log_gain = np.sum(-np.log(probs[:,us_labels]))
+        self.clf.fit(train_set_mod, self.y_cp[self.train_idx])
+        probs = self.clf.predict_proba(test_set)
+        probs += 1e-10 # Small value to prevent log of 0.
+        probs /= np.sum(probs, axis=1, keepdims=True)
+        log_gain = np.sum(-np.log(probs[:,test_set_labels]))
         return log_gain
     
-    def ChooseNextFeatureToAdd(self, batch_size:int=None):
+    def ChooseNextImputeValue(self, batch_size:int=None):
         """
         Chooses the next missing value to replace
         Input:
@@ -65,28 +101,30 @@ class SingleNaNAL(basemodel.Dataset):
         and column of the missing value. Float is the best value to replace the missing value with.
         """
         if batch_size is not None: self.set_batchsize(batch_size)
-        ls = self.x[self.train_idx]
-        querries = np.nonzero(np.isnan(ls)) # The position of the missing values. In the format of (row_inds, col_inds)
+        train_set = self.x_cp[self.train_idx]
+        querries = np.nonzero(np.isnan(train_set)) # The position of the missing values. In the format of (row_inds, col_inds)
         querries = np.array([tup for tup in zip(*querries)])
-        possible_vals_all_features = [np.unique(ls[~np.isnan(ls[:,i]),i]) for i in range(ls.shape[1])] # Get the possible values for each feature
+        if len(querries) > 50: querries = self.rng.choice(querries, size=50)
 
+        possible_vals_all_features = [np.unique(train_set[~np.isnan(train_set[:,i]),i]) for i in range(train_set.shape[1])] # Get the possible values for each feature
         scores = []
         for (i,j) in querries: # i'th sample, j'th feature
             sample_scores = []
             possible_vals = possible_vals_all_features[j]
             for val in possible_vals:
-                lg = self.LogGainOneValue(i,j,val)
+                lg = self.LogGainOneValue(i,j,val) # log gain
                 sample_scores.append(lg/len(possible_vals))
             scores.append(sample_scores)
 
         processed_scores = self.ConvertScoresToValScore(querries, scores, possible_vals_all_features) # List of tuples. (value, score).
-        sorted_idxs = np.argsort([tup[1] for tup in processed_scores])
+        sorted_idxs = np.argsort([tup[1] for tup in processed_scores]) # Sort by the score
         next_positions = querries[sorted_idxs[-self.batch_size:]]
-        next_values = [tup[0] for tup in processed_scores[-self.batch_size:]]
+        next_values = [tup[0] for tup in processed_scores[sorted_idxs[-self.batch_size:]]]
 
-        res = tuple((*pos, val) for pos, val in zip(next_positions, next_values))
-        breakpoint()
-        return res
+        i = [val[0] for val in next_positions]
+        j = [val[1] for val in next_positions]
+
+        return i, j, next_values
         
     def ConvertScoresToValScore(self, querries, scores, possible_vals_all_features):
         """
@@ -110,23 +148,24 @@ class SingleNaNAL(basemodel.Dataset):
             possible_vals = possible_vals_all_features[j] # All the possible values that the j'th feature can take on.
             best_val_idx = np.argmax(scores[idx]) # scores[idx] is the scores for the idx'th querry
             new_scores.append((possible_vals[best_val_idx], scores[idx][best_val_idx])) 
-        return new_scores
+        return np.array(new_scores)
 
 if __name__ == '__main__':
     from sklearn.ensemble import RandomForestClassifier
-
+    import sklearn
+    print('The scikit-learn version is {}.'.format(sklearn.__version__))
     # Load Data
     # Synthetic Data
     seed = 2024
     rng = np.random.default_rng(seed)
 
-    n_samples, n_features = 100, 15
+    n_samples, n_features = 100, 10
     data = rng.integers(0, 5, size=(n_samples, n_features))
     labels = rng.integers(0, 3,size=n_samples)
     print(data.shape, labels.shape)
 
     mask=np.zeros(n_samples*n_features, dtype=int)
-    mask[:int(n_samples*n_features*0.2)]=1
+    mask[:int(n_samples*n_features*0.5)]=1
     rng.shuffle(mask)
     mask = mask.astype(bool)
     mask = mask.reshape(n_samples, n_features)
@@ -135,7 +174,9 @@ if __name__ == '__main__':
     data[mask] = np.nan
     
     # Test making SingleFeatureAL.
-    model = SingleNaNAL(data, labels, classifier=RandomForestClassifier())
-    res = model.ChooseNextFeatureToAdd(3)
-
+    classifier = RandomForestClassifier(n_estimators=50, max_depth = 3, random_state=147)
+    model = SingleNaNAL(data, labels, classifier=classifier)
+    trainData = model.getTrainData()
+    res = model.ChooseNextImputeValue(1)
+    model.UpdateTrainSet(*res)
     print(res)

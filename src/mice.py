@@ -89,18 +89,22 @@ def ImputeDataMice(orig_data, threshold: float=1e-2, n_iters: int=10, seed: int=
 
     while iter < n_iters and not converged:
         print(f'Iteration: {iter}')
-        start_idx = 0
+        start_idx = 0 # used to keep track of current position in the vector of previous values.
 
-        mask1 = np.ones(cols_to_impute.shape, dtype = bool)
-        mask2 = np.ones(previous_imputed_values.shape, dtype = bool)
+        mask1 = np.ones(cols_to_impute.shape, dtype = bool) # Used to determine the columns for imputation for next cycle.
+        mask2 = np.ones(previous_imputed_values.shape, dtype = bool) # Used to get the previous iterations imputed values.
         for i, col in enumerate(tqdm(cols_to_impute)):
             if len(samples_to_impute[col]) != 0:
                 ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col])
                 new_vals = data[samples_to_impute[col], col]
                 old_vals = previous_imputed_values[start_idx: start_idx+len(samples_to_impute[col])] 
                 
-                delta = np.abs(new_vals - old_vals) - threshold*old_vals
+                # When all the new imputed values for a feature change by less than some threshold proportion of the
+                # previous imputed values. Then we consider the feature converged.
+                delta = np.abs(new_vals - old_vals) - threshold*old_vals 
                 feature_converged = np.sum(delta > 0) == 0
+
+                # If the feature is converged, remove this column from the list of columns that need to be imputed.
                 if feature_converged:
                     mask1[i] = False
                     mask2[start_idx:start_idx+len(samples_to_impute[col])] = False
@@ -110,13 +114,13 @@ def ImputeDataMice(orig_data, threshold: float=1e-2, n_iters: int=10, seed: int=
                     previous_imputed_values[start_idx: start_idx+len(samples_to_impute[col])] = new_vals
                     start_idx += len(samples_to_impute[col])
             
-        if start_idx != len(previous_imputed_values):
+        if start_idx != len(previous_imputed_values): # start index should always end up being the length of previous imputed values
             raise Exception('There is an bug in the code...')
 
-        cols_to_impute = cols_to_impute[mask1]
+        cols_to_impute = cols_to_impute[mask1] # Columns to impute for the next cycle.
         previous_imputed_values = previous_imputed_values[mask2]
 
-        converged = len(cols_to_impute) == 0
+        converged = len(cols_to_impute) == 0 # When no more columns to impute we end.
         iter += 1
 
     if converged: print("Converged and Finished!")

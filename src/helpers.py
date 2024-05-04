@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
 from sklearn.decomposition import PCA, TruncatedSVD
@@ -9,27 +10,42 @@ def EncodeLabels(labels):
   encoded = encoder.transform(labels)
   return encoded
 
-def Implement_Random_Masking(data, sample_proportions, feature_proportion, seed):
+def Implement_Random_Masking(data, proportion1, proportion2:float=None, axis:int=None, seed:int=174):
   '''
   This function takes X and the masking portion and return the new X with the same shape with missing the given portion of random data
   Args:
   - data: full data
-  - sample_proportions: float
-  - feature_proportion: float 
+  - proportion1: float
+  - proportion2: float 
+  - axis: which axis to apply first if you want to mask out a given portion of the rows or columns.
   - seed: int
   Returns:
   - masked_data: same shape as given data, missing given portion of data
   '''
-  
-  np.random.seed(seed)
-  cols = np.random.choice(np.arange(data.shape[1]), size=int(feature_proportion*data.shape[1]))
-
-  mask_indices = np.random.rand(*data[:, cols].shape) < sample_proportions
+  rng = np.random.default_rng(seed)
+  r, c = data.shape
+  mask = np.zeros((r,c))
+  if axis is None:
+    idxs = np.array([(i,j)for i in range(r) for j in range(c)])
+    idxs = rng.choice(idxs, size=round(proportion1*r*c), replace=False)
+  else:
+    if proportion2 is None:
+      warnings.warn('Using proportion1 as proportion2 since no proportion2 was specified.')
+      proportion2=proportion1
+    
+    if axis == 0:
+      ridxs = rng.choice(np.arange(r),size=round(proportion1*r),replace=False)
+      idxs = np.array([(i,j) for i in ridxs for j in rng.choice(np.arange(c),size=round(proportion2*c),replace=False)])
+    elif axis == 1:
+      cidxs = rng.choice(np.arange(c),size=round(proportion1*c),replace=False)
+      idxs = np.array([(i,j) for j in cidxs for i in rng.choice(np.arange(r),size=round(proportion2*r),replace=False)])
+    else:
+      raise Exception('axis must be 0 or 1')
+    
+  mask[idxs[:,0], idxs[:,1]]=1
+  mask = mask.astype(bool)
   masked_data = data.copy()
-  masked_data_cols = masked_data[:, cols]
-  masked_data_cols[mask_indices] = np.nan
-  masked_data[:, cols] = masked_data_cols
-
+  masked_data[mask] = np.nan    
   return masked_data
 
 def HighestVarianceFeatures(data, feature_proportion):

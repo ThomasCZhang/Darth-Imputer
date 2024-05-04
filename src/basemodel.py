@@ -20,12 +20,19 @@ class Dataset():
   def set_seed(self, seed:int=174):
     self.rng = np.random.default_rng(seed)
 
-  def split_data(self, test_portion, seed:int=None):
+  def split_data(self, test_portion, stratify: bool=False, seed:int=None):
     if seed is not None: self.set_seed(seed)
 
     n = self.x.shape[0] # Number of samples
-    test_idx = self.rng.choice(np.arange(n), size = int(test_portion*n), replace=False)
-    train_idx = np.setdiff1d(np.arange(n), test_idx)
+    if stratify:
+      classes = np.unique(self.y)
+      group_idxs = [np.argwhere(self.y==label).flatten() for label in classes]
+      test_idx = [self.rng.choice(idxs, size=int(test_portion*len(idxs)), replace=False) for idxs in group_idxs]
+      test_idx = np.sort(np.concatenate(test_idx))
+      train_idx = np.setdiff1d(np.arange(n), test_idx)
+    else:
+      test_idx = self.rng.choice(np.arange(n), size = int(test_portion*n), replace=False)
+      train_idx = np.setdiff1d(np.arange(n), test_idx)
     return train_idx, test_idx
 
   def get_split(self, test_portion, seed:int=None):
