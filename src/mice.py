@@ -10,7 +10,7 @@ def TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier
     classifier (sklearn estimator): The regressor/classifier used to impute values.
 
     Ouput:
-    Fitted sklearn classifier.
+    bool, Fitted sklearn classifier.
     """
     clf = classifier
     target=data[:, feat_num]
@@ -18,7 +18,11 @@ def TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier
 
     target = np.delete(target, samples_to_impute, axis = 0)
     features = np.delete(features, samples_to_impute, axis = 0)
-    return clf.fit(features,target)
+    classes = np.unique(target)
+    if len(classes) > 1:
+        return True, clf.fit(features,target)
+    else:
+        return False, classes
 
 def ImputeMissingValuesSingleFeature(data, feat_num, samples_to_impute, classifier):
     """
@@ -31,12 +35,15 @@ def ImputeMissingValuesSingleFeature(data, feat_num, samples_to_impute, classifi
     Output:
     New data with imputed values.
     """
-    clf = TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier)
 
-    feat_impute_samps = data[samples_to_impute]
-    feat_impute_samps = np.delete(feat_impute_samps,feat_num,axis=1)
-    
-    imputed_feats = clf.predict(feat_impute_samps)
+    use_clf, clf = TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier)
+    if use_clf:
+        feat_impute_samps = data[samples_to_impute]
+        feat_impute_samps = np.delete(feat_impute_samps,feat_num,axis=1)
+        imputed_feats = clf.predict(feat_impute_samps)
+    else:
+        # if use_clf is false, the second return argument is actually just the singular class value.
+        imputed_feats = clf
 
     data[samples_to_impute, feat_num] = imputed_feats
     return data
