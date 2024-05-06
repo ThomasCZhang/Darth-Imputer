@@ -1,9 +1,29 @@
+
 import numpy as np
 import sklearn
 import pandas as pd
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
+from sklearn.metrics import log_loss
+
+# class SampleBasedImputation():
+#
+#
+#
+#     def __init__(self, baseline_model, utility_func):
+#         self.model = baseline_model
+#         self.utility_func = utility_func
+#
+#         return
+#
+#     def select(self, features, labels, missing_data, test_labels):
+#
+#         utilities = []
+#         for d in missing_data:
+#             utilities.append(self.utility_func(d))
+#
+#         return np.argmax(utilities)
 
 class RandomSelection():
 
@@ -206,10 +226,8 @@ class SampleSubsetAcquisition():
 
 def cross_entropy_selector(missing_data, pred, true_label, model):
 
-    try:
-        return log_loss([true_label[0] for i in range(len(pred))], pred, labels = [0, 1])
-    except IndexError:
-        return log_loss([true_label for i in range(len(pred))], pred, labels = [0, 1])
+    return log_loss([true_label[0] for i in range(len(pred))], pred, labels = [0, 1])
+
 
 
 
@@ -542,29 +560,64 @@ def str_to_int_labels(labels):
 
     return labels.astype(np.int32)
 
+# if __name__ == "__main__":
+#     data = pd.read_csv("fertility_Diagnosis.txt")
+
+#     matrix = np.array(data)
+#     labels = matrix[:, -1]
+#     features = matrix[:, 0:9]
+
+#     labels = str_to_int_labels(labels)
+
+#     split = RandomSplit(split_percent = 0.1)
+
+#     percent_missing = 0.1
+
+#     model = LogisticRegression
+
+#     methods = [RandomSelection()]
+
+#     impute = ImputationSimulation(features, labels, split, percent_missing, model, methods, "cross validation")
+
+#     predicted = LogisticRegression().fit(features, labels).predict(features)
+#     print(np.mean(predicted == labels))
+
+#     means, stds = impute.run_simulation()
+
+#     print(len(matrix))
+#     print(means)
+
+
 if __name__ == "__main__":
+
     data = pd.read_csv("fertility_Diagnosis.txt")
 
     matrix = np.array(data)
     labels = matrix[:, -1]
     features = matrix[:, 0:9]
-
     labels = str_to_int_labels(labels)
 
+    features = np.array(features, dtype = np.float64)
+
     split = RandomSplit(split_percent = 0.1)
-
-    percent_missing = 0.1
-
     model = LogisticRegression
 
-    methods = [RandomSelection()]
 
-    impute = ImputationSimulation(features, labels, split, percent_missing, model, methods, "cross validation")
+    methods = [RandomSelection(),
 
-    predicted = LogisticRegression().fit(features, labels).predict(features)
-    print(np.mean(predicted == labels))
+               MeanImpute(importance_selector = cross_entropy_selector,
+                          loss = cross_entropy_loss)
+               #
+               # SampleSubsetAcquisition(max_subset_size = 100,
+               #                         importance_selector = cross_entropy_selector,
+               #                         max_ = 10,
+               #                         min_ = 0,
+               #                         bins = 3,
+               #                         model = model,
+               #                         error = True),
+
+               ]
+
+    impute = ImputationSimulation(features, labels, split, 0.4, model, methods, "cross validation")
 
     means, stds = impute.run_simulation()
-
-    print(len(matrix))
-    print(means)
