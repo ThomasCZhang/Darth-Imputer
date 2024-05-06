@@ -1,41 +1,49 @@
 import numpy as np
 from tqdm import tqdm
-from sklearn.linear_model import LinearRegression
 
-def TrainRegressorForSingleFeature(data, feat_num, samples_to_impute):
+def TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier):
     """
     Input:
     data (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
     feat_num (int): The feature to train the classifier on.
     samples_to_impute (list[int]): List of row indexes corresponding to samples that we should impute.
+    classifier (sklearn estimator): The regressor/classifier used to impute values.
 
     Ouput:
-    Fitted sklearn classifier.
+    bool, Fitted sklearn classifier.
     """
-    clf = LinearRegression()
+    clf = classifier
     target=data[:, feat_num]
     features=np.delete(data, feat_num, axis=1)
 
     target = np.delete(target, samples_to_impute, axis = 0)
     features = np.delete(features, samples_to_impute, axis = 0)
-    return clf.fit(features,target)
+    classes = np.unique(target)
+    if len(classes) > 1:
+        return True, clf.fit(features,target)
+    else:
+        return False, classes
 
-def ImputeMissingValuesSingleFeature(data, feat_num, samples_to_impute):
+def ImputeMissingValuesSingleFeature(data, feat_num, samples_to_impute, classifier):
     """
     Input:
     data (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
     feat_num (int): The feature to train the classifier on.
     samples_to_impute (list[int]): List of row indexes corresponding to samples that we should impute.
+    classifier (sklearn estimator): The regressor/classifier used to impute values.
 
     Output:
     New data with imputed values.
     """
-    clf = TrainRegressorForSingleFeature(data, feat_num, samples_to_impute)
 
-    feat_impute_samps = data[samples_to_impute]
-    feat_impute_samps = np.delete(feat_impute_samps,feat_num,axis=1)
-    
-    imputed_feats = clf.predict(feat_impute_samps)
+    use_clf, clf = TrainRegressorForSingleFeature(data, feat_num, samples_to_impute, classifier)
+    if use_clf:
+        feat_impute_samps = data[samples_to_impute]
+        feat_impute_samps = np.delete(feat_impute_samps,feat_num,axis=1)
+        imputed_feats = clf.predict(feat_impute_samps)
+    else:
+        # if use_clf is false, the second return argument is actually just the singular class value.
+        imputed_feats = clf
 
     data[samples_to_impute, feat_num] = imputed_feats
     return data
@@ -58,12 +66,13 @@ def InitializeMissingValues(data, feat_num, samples_to_impute, seed):
 
     data[samples_to_impute, feat_num] = rng.uniform(minimum, maximum, len(samples_to_impute))
 
-def ImputeDataMice(orig_data, threshold: float=1e-2, n_iters: int=10, seed: int=1337):
+def ImputeDataMice(orig_data, classifier, threshold: float=1e-2, n_iters: int=10, seed: int=1337):
     """
     Input 
     orig_data (np.ndarray): The (feature) data. N x s. N = number of samples. s = number of features.
-    threshold (float): The threshold for considering whether a value is converged. Default is 1e-2. When no individual
-        value changes more than the threshold, the data is considered converged.
+    classifier (sklearn estimator): The regressor/classifier used to impute values.
+    threshold (float): The threshold for considering whether a value is converged. Default is 1e-2 (1% change).
+        When no individual value changes more than the threshold, the data is considered converged. 
     n_iters (int): The maximum number of iterations to run mice for before stopping. Default is 10.
     seed (int): The seed for the random number generator.
 
@@ -88,19 +97,23 @@ def ImputeDataMice(orig_data, threshold: float=1e-2, n_iters: int=10, seed: int=
     iter = 0
 
     while iter < n_iters and not converged:
-        print(f'Iteration: {iter}')
-        start_idx = 0
+        start_idx = 0 # used to keep track of current position in the vector of previous values.
 
-        mask1 = np.ones(cols_to_impute.shape, dtype = bool)
-        mask2 = np.ones(previous_imputed_values.shape, dtype = bool)
-        for i, col in enumerate(tqdm(cols_to_impute)):
+        mask1 = np.ones(cols_to_impute.shape, dtype = bool) # Used to determine the columns for imputation for next cycle.
+        mask2 = np.ones(previous_imputed_values.shape, dtype = bool) # Used to get the previous iterations imputed values.
+        progress_bar = tqdm(cols_to_impute, desc=('Iteration %d' % iter), position=0)
+        for i, col in enumerate(progress_bar):
             if len(samples_to_impute[col]) != 0:
-                ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col])
+                ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col], classifier)
                 new_vals = data[samples_to_impute[col], col]
                 old_vals = previous_imputed_values[start_idx: start_idx+len(samples_to_impute[col])] 
                 
-                delta = np.abs(new_vals - old_vals) - threshold*old_vals
+                # When all the new imputed values for a feature change by less than some threshold proportion of the
+                # previous imputed values. Then we consider the feature converged.
+                delta = np.abs(new_vals - old_vals) - threshold*old_vals 
                 feature_converged = np.sum(delta > 0) == 0
+
+                # If the feature is converged, remove this column from the list of columns that need to be imputed.
                 if feature_converged:
                     mask1[i] = False
                     mask2[start_idx:start_idx+len(samples_to_impute[col])] = False
@@ -110,13 +123,13 @@ def ImputeDataMice(orig_data, threshold: float=1e-2, n_iters: int=10, seed: int=
                     previous_imputed_values[start_idx: start_idx+len(samples_to_impute[col])] = new_vals
                     start_idx += len(samples_to_impute[col])
             
-        if start_idx != len(previous_imputed_values):
+        if start_idx != len(previous_imputed_values): # start index should always end up being the length of previous imputed values
             raise Exception('There is an bug in the code...')
 
-        cols_to_impute = cols_to_impute[mask1]
+        cols_to_impute = cols_to_impute[mask1] # Columns to impute for the next cycle.
         previous_imputed_values = previous_imputed_values[mask2]
 
-        converged = len(cols_to_impute) == 0
+        converged = len(cols_to_impute) == 0 # When no more columns to impute we end.
         iter += 1
 
     if converged: print("Converged and Finished!")
