@@ -10,14 +10,18 @@ def EncodeLabels(labels):
   encoded = encoder.transform(labels)
   return encoded
 
-def Implement_Random_Masking(data, proportion1, proportion2:float=None, axis:int=None, seed:int=174):
+def Implement_Random_Masking(data, proportion1, proportion2:float=None, axis:int=None, pseudo:bool=False, seed:int=174):
   '''
-  This function takes X and the masking portion and return the new X with the same shape with missing the given portion of random data
+  This function takes X and the masking portion and return the new X with the
+  same shape with missing the given portion of random data.
+
   Args:
   - data: full data
   - proportion1: float
   - proportion2: float 
   - axis: which axis to apply first if you want to mask out a given portion of the rows or columns.
+  - pseudo: if True, the percentage of nans will always be exactly the same given the same dataset and proportions.
+      if False, then the percentage of nans will be approximately proportion * dataset size
   - seed: int
   Returns:
   - masked_data: same shape as given data, missing given portion of data
@@ -27,7 +31,12 @@ def Implement_Random_Masking(data, proportion1, proportion2:float=None, axis:int
   mask = np.zeros((r,c))
   if axis is None:
     idxs = np.array([(i,j)for i in range(r) for j in range(c)])
-    idxs = rng.choice(idxs, size=round(proportion1*r*c), replace=False)
+    if pseudo:
+      # Pseudorandom. The number of masked values is constant.
+      idxs = rng.choice(idxs, size=round(proportion1*r*c), replace=False)
+    else:
+      # True random.
+      idxs = idxs[rng.random(r*c) < proportion1]
   else:
     if proportion2 is None:
       warnings.warn('Using proportion1 as proportion2 since no proportion2 was specified.')
@@ -35,10 +44,20 @@ def Implement_Random_Masking(data, proportion1, proportion2:float=None, axis:int
     
     if axis == 0:
       ridxs = rng.choice(np.arange(r),size=round(proportion1*r),replace=False)
-      idxs = np.array([(i,j) for i in ridxs for j in rng.choice(np.arange(c),size=round(proportion2*c),replace=False)])
+      if pseudo:
+        # Pseudorandom. The number of masked values is constant.
+        idxs = np.array([(i,j) for i in ridxs for j in rng.choice(np.arange(c),size=round(proportion2*c),replace=False)])
+      else:
+        # True random.
+        idxs = np.array([(i,j) for i in ridxs for j in np.arange(c)[rng.random(c)<proportion2]])
     elif axis == 1:
       cidxs = rng.choice(np.arange(c),size=round(proportion1*c),replace=False)
-      idxs = np.array([(i,j) for j in cidxs for i in rng.choice(np.arange(r),size=round(proportion2*r),replace=False)])
+      if pseudo:
+        # Pseudorandom. The number of masked values is constant.
+        idxs = np.array([(i,j) for j in cidxs for i in rng.choice(np.arange(r),size=round(proportion2*r),replace=False)])
+      else:
+        # True random.
+        idxs = np.array([(i,j) for j in cidxs for i in np.arange(r)[rng.random(r)<proportion2]])
     else:
       raise Exception('axis must be 0 or 1')
     

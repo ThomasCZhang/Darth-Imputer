@@ -92,7 +92,7 @@ def ImputeDataMice(orig_data, classifier, threshold: float=1e-2, n_iters: int=10
     cols_to_impute = np.array([col for col in range(n_col) if len(samples_to_impute[col])!= 0])
 
     # Prep variables for the while loop.
-    previous_imputed_values = np.array([val for col in cols_to_impute for val in data[samples_to_impute[col], col].squeeze()])
+    previous_imputed_values = np.array([val for col in cols_to_impute for val in data[samples_to_impute[col], col].reshape(-1)])
     converged = False
     iter = 0
 
@@ -101,7 +101,7 @@ def ImputeDataMice(orig_data, classifier, threshold: float=1e-2, n_iters: int=10
 
         mask1 = np.ones(cols_to_impute.shape, dtype = bool) # Used to determine the columns for imputation for next cycle.
         mask2 = np.ones(previous_imputed_values.shape, dtype = bool) # Used to get the previous iterations imputed values.
-        progress_bar = tqdm(cols_to_impute, desc=('Iteration %d' % iter), position=0)
+        progress_bar = tqdm(cols_to_impute, desc=('Iteration %d' % iter), position=0, leave=False)
         for i, col in enumerate(progress_bar):
             if len(samples_to_impute[col]) != 0:
                 ImputeMissingValuesSingleFeature(data, col, samples_to_impute[col], classifier)

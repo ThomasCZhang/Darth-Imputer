@@ -170,14 +170,15 @@ class SEU_ES(SEU):
         querries = np.array([tup for tup in zip(*querries)])
         if len(querries) > 50:
             x_train, y_train = self.getTrainData()
-            probs = self.clf.fit(x_train)
-            r = np.repeat(np.arange(y_train.shape), 2)
+            self.clf.fit(x_train, y_train)
+            probs = self.clf.predict_proba(x_train)
+            r = np.repeat(np.arange(len(y_train)), 2)
             c = np.argsort(probs, axis=1)[:,-2:].flatten()
             weights = probs[r, c].reshape(-1, 2)
-            weights = np.diff(weights)
+            weights = np.diff(weights).squeeze()
             weights = np.array([weights[tup[0]] for tup in querries])
             weights /= np.sum(weights)
-            querries = self.rng.choice(querries, size=50, weights=weights)
+            querries = self.rng.choice(querries, size=50, p=weights)
 
         possible_vals_all_features = [np.unique(train_set[~np.isnan(train_set[:,i]),i]) for i in range(train_set.shape[1])] # Get the possible values for each feature
         scores = []

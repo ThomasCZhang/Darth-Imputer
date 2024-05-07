@@ -50,7 +50,11 @@ class FeatureImputationPipeline():
 
     Returns the imputed data matrix and the loss.
     """
-    self.mask_data(seed)
+    if np.sum(np.isnan(self.features)) == 0:
+      self.mask_data(seed)
+    else:
+      self.masked_data = self.features
+      
     res = self.method(self.masked_data, seed = seed)
     loss = self.loss(res, self.features)
 
@@ -63,7 +67,7 @@ class FeatureImputationPipeline():
     """
     prow, pcol = self.params['p_rows'], self.params['p_cols']
     if save_path[-1] != '/': save_path = save_path + '/'
-    save_path = save_path + f'{method_name}prow{100*prow:02.0f}pcol{100*pcol:02.0f}.npy'
+    save_path = save_path + f'{method_name}_prow{100*prow:02.0f}pcol{100*pcol:02.0f}.npy'
 
     losses = []
     imputedData = []
@@ -92,7 +96,6 @@ class FeatureImputationPipeline():
     for i in range(num_conditions):
       for name, values in variables.items():
         self.params[name] = values[i]
-        
       mean_loss.append(self.run_multiple_seeds(num_simuls, save_dir, method_name))
 
     return mean_loss

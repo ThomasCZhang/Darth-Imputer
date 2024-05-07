@@ -1,7 +1,7 @@
 import numpy as np
 import basemodel
 
-class RFS(basemodel.Dataset):
+class RFVA(basemodel.Dataset):
     def __init__(self,
                 x:np.ndarray=None, # N x d. N = number of samples. d = number of dimensions.
                 y:np.ndarray=None, # N x c. N = number of samples. c = number of classes.

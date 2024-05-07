@@ -77,18 +77,37 @@ class SampleSubsetAcquisition():
     """
 
     def __init__(self, max_subset_size, importance_selector,
-    max_, min_, bins = 3, model = LogisticRegression, error = False):
+    max_ = 1, bins = 3, model = LogisticRegression, error = False,
+    all_labels = [0, 1]):
 
         self.max_subset_size = max_subset_size
         self.importance_selector = importance_selector
         self.model = model
         self.scaler = sklearn.preprocessing.StandardScaler()
         self.max_ = max_
-        self.min_ = min_
         self.bins = bins
         self.error = error
+        self.all_labels = all_labels
 
         return
+
+    # def build_normal_bins(self, features, labels):
+    #
+    #     """
+    #     gets the mean of each feature. Assuming normal
+    #     distribution of each column, make bins as
+    #     mean +- std * i for all i in bin size
+    #
+    #     if bin size is even, just remove mean
+    #
+    #     """
+    #
+    #     # Maybe sould do mean and stdv for each class?
+    #     means = np.mean(features, axis = 0)
+    #     stdvs = np.std(features, axis = 0)
+    #     bins = [[means[j] + stdvs[j] * (i + 1) for i in range(-self.bins // 2, self.bins // 2)] for j in range(len(means))]
+    #     return bins
+
 
     def build_normal_bins(self, features, labels):
 
@@ -101,19 +120,72 @@ class SampleSubsetAcquisition():
 
         """
 
-        # Maybe sould do mean and stdv for each class?
-        means = np.mean(features, axis = 0)
-        stdvs = np.std(features, axis = 0)
-        bins = [[means[j] + stdvs[j] * (i + 1) for i in range(-self.bins // 2, self.bins // 2)] for j in range(len(means))]
+        if self.discrete_values is None:
+            return self.build_only_numerical(features, labels)
+
+        step = self.max_ /  ((self.bins - 1) // 2)
+        # num_bins = 3
+        # all_labels = [1,2,3]
+        bins = {label : [] for label in self.all_labels}
+
+        means = {}
+        stdvs = {}
+
+        for label in self.all_labels:
+
+            means[label] = np.mean(features[np.where(labels == label)[0]], axis = 0)
+            stdvs[label] = np.std(features[np.where(labels == label)[0]], axis = 0)
+
+        for label in self.all_labels:
+
+            for col in range(len(features[0])):
+
+                if self.discrete_values[col]:
+                    column = self.discrete_value_sets[col]
+
+                else:
+                    if stdvs[label][col] == 0:
+                        column = [means[label][col]]
+                    else:
+                        column = [means[label][col] + stdvs[label][col] * (i + step) for i in range(-self.max_ -1, -self.max_ + self.bins - 1))]
+
+                bins[label].append(column)
+
+
+        return bins
+
+    def build_only_numerical(self, features, labels):
+
+        bins = {label : [] for label in self.all_labels}
+
+        step = self.max_ /  ((self.bins - 1) // 2)
+
+        means = {}
+        stdvs = {}
+
+        for label in all_labels:
+
+            means[label] = np.mean(features[np.where(labels == label)[0]], axis = 0)
+            stdvs[label] = np.std(features[np.where(labels == label)[0]], axis = 0)
+
+        for label in all_labels:
+
+            for col in range(len(features[0])):
+
+                if stdvs[label][col] == 0:
+                    column = [means[label][col]]
+                else:
+                    column = [means[label][col] + stdvs[label][col] * (i + step) for i in range(-self.max_ -1, -self.max_ + self.bins - 1))]
+
+                bins[label].append(column)
+
+
         return bins
 
     def repeat_and_fill(self, array, subset):
 
         array = np.reshape(array, (1, len(array)))
         array = np.tile(array, (len(subset), 1))
-
-        # print("array shape under rep fill\n", array.shape)
-        # print("subset shape\n", subset.shape)
 
         j = 0
         for col in range(len(array[0])):
