@@ -6,12 +6,17 @@ Breast Data: CSV file containing the gene expression levels of 54676 genes (colu
 
 # Datasets
 
+There are three datasets used for this project. All three datasets are from the UCI database.
+
+1. [Breast Cancer Dataset](https://archive.ics.uci.edu/dataset/14/breast+cancer)
+2. [National Poll on Healthy Aging](https://archive.ics.uci.edu/dataset/936/national+poll+on+healthy+aging+(npha))
+3. [Fertility](https://archive.ics.uci.edu/dataset/244/fertility)
 
 # File structure
 The directories should be in the following format:
-src
+-src
     -sample_based
-data
+-data
     -aging <br />
     -binary <br />
     -breast_cancer <br />
