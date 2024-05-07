@@ -12,9 +12,9 @@ The directories should be in the following format:
 src
     -sample_based
 data
-    -aging
-    -binary
-    -breast_cancer
+    -aging <br />
+    -binary <br />
+    -breast_cancer <br />
 
 # Running the code
 There are three jupyter notebooks that should be used to run the code. 
