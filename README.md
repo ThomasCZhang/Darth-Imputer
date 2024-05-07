@@ -22,10 +22,10 @@ The directories should be in the following format:
     - breast_cancer
 
 # Running the code
-There are three jupyter notebooks that should be used to run the code. 
-The first two are in the src directory and are named.
-AFVA.ipynb and Uncertainty_v2.ipynb
+There are three jupyter notebooks that should be used to run the code. The other python files in src contain
+functions that will be called upon in the jupyter notebooks.
 
-The third is in the directory src/sample_based and is named: run_simpulations.ipynb
-
-
+The locations of the notebooks are as follows:
+1. src/AFVA.ipynb
+2. src/Uncertainty_v2.ipynb
+3. src/sample_based/run_simulations.ipynb
