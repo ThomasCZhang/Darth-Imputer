@@ -13,13 +13,13 @@ There are three datasets used for this project. All three datasets are from the 
 3. [Fertility](https://archive.ics.uci.edu/dataset/244/fertility)
 
 # File structure
-The directories should be in the following format:
--src
-    -sample_based
--data
-    -aging <br />
-    -binary <br />
-    -breast_cancer <br />
+The directories should be in the following format: 
+- src
+    - sample_based
+- data
+    - aging 
+    - binary 
+    - breast_cancer
 
 # Running the code
 There are three jupyter notebooks that should be used to run the code. 
